@@ -155,6 +155,10 @@
 
             var response = _blocks[blockIndex].Responses[responseIndex];
             Console.WriteLine($"    Type: {response.Type}");
+            if (response.HasDateTime)
+            {
+                Console.WriteLine($"    Time: {response.DateTime}");
+            }
             Console.WriteLine($"    Compression format: {response.CompressionFormat}");
             Console.WriteLine($"    Size: {response.Length}");
             Console.WriteLine($"    Content: {response.Content}");
