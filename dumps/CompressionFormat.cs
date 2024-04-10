@@ -1,5 +1,8 @@
-﻿public enum CompressionFormat
+﻿namespace tz
 {
-    ZSTD,
-    LZ4
+    public enum CompressionFormat
+    {
+        ZSTD,
+        LZ4
+    }
 }
