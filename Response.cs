@@ -56,17 +56,19 @@ namespace tz
             // decompress response body
             if (_compressionFormat == CompressionFormat.ZSTD)
             {
-                currentIndex += 2;
+                currentIndex++;
+                var bodyLength = file[currentIndex];
+                currentIndex++;
                 var compressed = file[currentIndex..endIndex];
                 using var decompressor = new Decompressor();
-                // compressed data begins after 2 or 3 bits from format string end.
-                // did't find way to defy how many exactly, so trying both variants
-                try
+                if (bodyLength == compressed.Length)
                 {
-                    var content = Encoding.Default.GetString(decompressor.Unwrap(compressed));
+                    var decompressed = decompressor.Unwrap(compressed);
+                    var content = Encoding.Default.GetString(decompressed);
                     _content = JObject.Parse(content);
-                }
-                catch (ZstdException e)
+                    _contentLength = decompressed.Length;
+                } 
+                else
                 {
                     currentIndex++;
                     compressed = file[currentIndex..endIndex];
