@@ -13,6 +13,7 @@ namespace tz
         private readonly JObject? _content;
         private readonly CompressionFormat _compressionFormat;
         private readonly int _length;
+        private readonly int _contentLength;
         private readonly bool _hasDateTime;
         private readonly DateTime _dateTime;
 
@@ -69,8 +70,10 @@ namespace tz
                 {
                     currentIndex++;
                     compressed = file[currentIndex..endIndex];
-                    var content = Encoding.Default.GetString(decompressor.Unwrap(compressed));
+                    var decompressed = decompressor.Unwrap(compressed);
+                    var content = Encoding.Default.GetString(decompressed);
                     _content = JObject.Parse(content);
+                    _contentLength = decompressed.Length;
                 }
             }
             if (_compressionFormat == CompressionFormat.LZ4)
@@ -86,6 +89,7 @@ namespace tz
                     var compressed = file[currentIndex..endIndex];
                     var content = Encoding.Default.GetString(compressed);
                     _content = JObject.Parse(content);
+                    _contentLength = compressed.Length;
                 }
                 // get 2 4-bit integets. first for the decompressed body length, second is for compressed.
                 else
@@ -107,6 +111,7 @@ namespace tz
                     LZ4Codec.Decode(compressed, 0, compressedLength, decompressed, 0, decompressedLength);
                     var content = Encoding.Default.GetString(decompressed);
                     _content = JObject.Parse(content);
+                    _contentLength = decompressed.Length;
                 }
             }
 
@@ -142,6 +147,7 @@ namespace tz
         public JObject? Content => _content;
         public CompressionFormat CompressionFormat => _compressionFormat;
         public int Length => _length;
+        public int ContentLength => _contentLength;
         public bool HasDateTime => _hasDateTime;
         public DateTime DateTime => _dateTime;
     }

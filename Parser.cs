@@ -175,7 +175,7 @@
 
             for (var i = 0; i < sorted.Length; i++)
             {
-                var avarageSize = (int)Math.Floor(sorted[i].Average(x => x.Length));
+                var avarageSize = (int)Math.Floor(sorted[i].Average(x => x.ContentLength));
                 Console.WriteLine($"    {i}: {sorted[i][0].Type}");
                 Console.WriteLine($"      Count: {sorted[i].Length}");
                 Console.WriteLine($"      Average Size: {avarageSize}");
