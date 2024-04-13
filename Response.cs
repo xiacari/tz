@@ -59,24 +59,16 @@ namespace tz
                 currentIndex++;
                 var bodyLength = file[currentIndex];
                 currentIndex++;
-                var compressed = file[currentIndex..endIndex];
-                using var decompressor = new Decompressor();
-                if (bodyLength == compressed.Length)
-                {
-                    var decompressed = decompressor.Unwrap(compressed);
-                    var content = Encoding.Default.GetString(decompressed);
-                    _content = JObject.Parse(content);
-                    _contentLength = decompressed.Length;
-                } 
-                else
+                if (bodyLength != endIndex - currentIndex)
                 {
                     currentIndex++;
-                    compressed = file[currentIndex..endIndex];
-                    var decompressed = decompressor.Unwrap(compressed);
-                    var content = Encoding.Default.GetString(decompressed);
-                    _content = JObject.Parse(content);
-                    _contentLength = decompressed.Length;
                 }
+                var compressed = file[currentIndex..endIndex];
+                using var decompressor = new Decompressor();
+                var decompressed = decompressor.Unwrap(compressed);
+                var content = Encoding.Default.GetString(decompressed);
+                _content = JObject.Parse(content);
+                _contentLength = decompressed.Length;
             }
             if (_compressionFormat == CompressionFormat.LZ4)
             {
