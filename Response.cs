@@ -7,142 +7,81 @@ namespace tz
 {
     public class Response
     {
-        private const byte MAGIC_LZ4_BYTE = 0x59;
-
         private readonly string _type;
         private readonly JObject? _content;
         private readonly CompressionFormat _compressionFormat;
-        private readonly int _length;
-        private readonly int _contentLength;
-        private readonly bool _hasDateTime;
+        private readonly int _compressedSize;
+        private readonly int _decompressedSize;
         private readonly DateTime _dateTime;
 
-        public Response(byte[] file, int startIndex, int length)
+        public Response(RawResponse raw)
         {
-            _length = length;
-            var currentIndex = startIndex;
-            var endIndex = startIndex + _length;
+            var contentBytes = raw.Content.ToByteArray();
+            _compressedSize = contentBytes.Length;
+            
+            _type = raw.Type;
+            _dateTime = GetDateTime(raw.Timestamp);
 
-            // get path length
-            var typeLength = file[currentIndex];
-            currentIndex++;
-
-            // get path
-            var path = new StringBuilder();
-            for (var i = 0; i < typeLength; i++, currentIndex++)
+            if (raw.Compression == "zstd")
             {
-                path.Append((char)file[currentIndex]);
-            }
-            _type = path.ToString();
-            currentIndex++;
-
-            // get format length
-            var formatLength = file[currentIndex];
-            currentIndex++;
-
-            // get format
-            var format = new StringBuilder();
-            for (var i = 0; i < formatLength; i++, currentIndex++)
-            {
-                format.Append((char)file[currentIndex]);
-            }
-            _compressionFormat = format.ToString() switch
-            {
-                "lz4" => CompressionFormat.LZ4,
-                "zstd" => CompressionFormat.ZSTD,
-                _ => throw new Exception("Unknow compression format.")
-            };
-
-            // decompress response body
-            if (_compressionFormat == CompressionFormat.ZSTD)
-            {
-                currentIndex++;
-                var bodyLength = file[currentIndex];
-                currentIndex++;
-                if (bodyLength != endIndex - currentIndex)
-                {
-                    currentIndex++;
-                }
-                var compressed = file[currentIndex..endIndex];
+                _compressionFormat = CompressionFormat.ZSTD;
                 using var decompressor = new Decompressor();
-                var decompressed = decompressor.Unwrap(compressed);
+                var decompressed = decompressor.Unwrap(contentBytes);
                 var content = Encoding.Default.GetString(decompressed);
                 _content = JObject.Parse(content);
-                _contentLength = decompressed.Length;
+                _decompressedSize = decompressed.Length;
             }
-            if (_compressionFormat == CompressionFormat.LZ4)
+            else if (raw.Compression == "lz4")
             {
-                currentIndex++;
-                var magicByte = file[currentIndex];
-                // in some wierd cases body is presented in uncompressed state.
-                // trying to decompress such responses breaks decompressor i use.
-                // this cases appears when the next byte is equal to 0x59. don't know why.
-                if (magicByte == MAGIC_LZ4_BYTE)
+                _compressionFormat = CompressionFormat.LZ4;
+                var d0 = contentBytes[0];
+                var d1 = contentBytes[1];
+                var d2 = contentBytes[2];
+                var d3 = contentBytes[3];
+                var c0 = contentBytes[4];
+                var c1 = contentBytes[5];
+                var c2 = contentBytes[6];
+                var c3 = contentBytes[7];
+                var decompressedLength = d3 << 24 | d2 << 16 | d1 << 8 | d0;
+                var compressedLength = c3 << 24 | c2 << 16 | c1 << 8 | c0;
+                if (decompressedLength == compressedLength)
                 {
-                    currentIndex += 9;
-                    var compressed = file[currentIndex..endIndex];
-                    var content = Encoding.Default.GetString(compressed);
+                    var decompressed = contentBytes[8..];
+                    var content = Encoding.Default.GetString(decompressed);
                     _content = JObject.Parse(content);
-                    _contentLength = compressed.Length;
+                    _decompressedSize = decompressed.Length;
                 }
-                // get 2 4-bit integets. first for the decompressed body length, second is for compressed.
                 else
                 {
-                    currentIndex += 2;
-                    var d0 = file[currentIndex];
-                    var d1 = file[currentIndex + 1];
-                    var d2 = file[currentIndex + 2];
-                    var d3 = file[currentIndex + 3];
-                    var c0 = file[currentIndex + 4];
-                    var c1 = file[currentIndex + 5];
-                    var c2 = file[currentIndex + 6];
-                    var c3 = file[currentIndex + 7];
-                    currentIndex += 8;
-                    var decompressedLength = d3 << 24 | d2 << 16 | d1 << 8 | d0;
-                    var compressedLength = c3 << 24 | c2 << 16 | c1 << 8 | c0;
-                    var compressed = file[currentIndex..endIndex];
+                    var compressed = contentBytes[8..];
                     var decompressed = new byte[decompressedLength];
                     LZ4Codec.Decode(compressed, 0, compressedLength, decompressed, 0, decompressedLength);
                     var content = Encoding.Default.GetString(decompressed);
                     _content = JObject.Parse(content);
-                    _contentLength = decompressed.Length;
+                    _decompressedSize = decompressed.Length;
                 }
             }
-
-            // some responses have current moment timestamps in them.
-            // use them to get response time.
-            _hasDateTime = TryGetDateTime(out var dateTime);
-            if (_hasDateTime)
-            {
-                _dateTime = dateTime;
-            }
+            else
+                throw new Exception("Unable to defy compression format.");
         }
 
-        private bool TryGetDateTime(out DateTime dateTime)
+        private DateTime GetDateTime(ulong timestamp)
         {
-            dateTime = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
-            if (!(_content?["data"] is JObject data))
-                return false;
-            if (!(data["ts"]?.Value<long>() is long timeStamp))
-                return false;
-            if (timeStamp == 0)
-                return false;
-            dateTime = dateTime.AddMilliseconds(timeStamp).ToLocalTime();
-            return true;
+            var dateTime = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
+            dateTime = dateTime.AddMilliseconds(timestamp).ToLocalTime();
+            return dateTime;
         }
 
         public override string ToString()
         {
-            return _hasDateTime ? $"Type: {Type}, Time: {_dateTime}, Compression: {CompressionFormat}, Size: {Length}"
-                                : $"Type: {Type}, Compression: {CompressionFormat}, Size: {Length}";
+            return $"Type: {Type}, Time: {DateTime}, Compression: {CompressionFormat}, Size: {CompressedSize}";
         }
 
         public string Type => _type;
         public JObject? Content => _content;
         public CompressionFormat CompressionFormat => _compressionFormat;
-        public int Length => _length;
-        public int ContentLength => _contentLength;
-        public bool HasDateTime => _hasDateTime;
+        public int CompressedSize => _compressedSize;
+        public int DecompressedSize => _decompressedSize;
         public DateTime DateTime => _dateTime;
     }
 }

@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "tz": {
+      "commandName": "Project",
+      "commandLineArgs": "save dumps/dump1"
+    }
+  }
+}

@@ -1,14 +1,15 @@
 ﻿using System.Text;
-using System.Xml.Linq;
 
 namespace tz
 {
     public static class Parser
     {
         public static Block[] _blocks;
+        public static Response[] _responses;
 
         public static void Main(string[] args)
         {
+            
             if (args.Length < 1)
             {
                 Console.WriteLine("Wrong arguments.");
@@ -48,8 +49,9 @@ namespace tz
                     Console.WriteLine("Unknown command.");
                     break;
             }
+            
         }
-
+        
         private static void ParseFile(string path)
         {
             var blocks = new List<Block>();
@@ -57,77 +59,82 @@ namespace tz
             var currentIndex = 0;
             while (currentIndex < file.Length)
             {
-                var block = new Block(file, currentIndex);
-                currentIndex += block.Length + 2;
-                blocks.Add(block);
+                var len0 = file[currentIndex];
+                var len1 = file[currentIndex + 1];
+                var blockLength = len1 << 8 | len0;
+                var start = currentIndex + 2;
+                var end = start + blockLength;
+                var blockBytes = file[start..end];
+                var block = RawBlock.Parser.ParseFrom(blockBytes);
+                currentIndex += blockLength + 2;
+                blocks.Add(new Block(blockLength, block));
             }
             _blocks = blocks.ToArray();
+            _responses = blocks.SelectMany(x => x.Responses).ToArray();
         }
-
+        
+        
         private static void Parse()
         {
-            Console.WriteLine(GetParse());
+            Console.WriteLine(GetParseText());
             Console.WriteLine("File is parsed successfully.");
         }
-
+        
+        
         private static void PrintAll()
         {
-            Console.WriteLine($"Blocks: {_blocks.Length}");
-            for (var i = 0; i < _blocks.Length; i++)
+            Console.WriteLine($"Responses: {_responses.Length}");
+            for (var i = 0; i < _responses.Length; i++)
             {
-                for (var j = 0; j < _blocks[i].ResponseCount; j++)
-                {
-                    Console.WriteLine($"{i}.{j}:\n{GetResponse(i, j, Newtonsoft.Json.Formatting.None)}");
-                }
+                Console.WriteLine($"{i}:\n{GetResponseText(_responses[i], Newtonsoft.Json.Formatting.None)}");
             }
         }
-
+        
         private static void Info()
         {
-            Console.WriteLine(GetInfo());
+            Console.WriteLine(GetInfoText());
         }
-
+        
         private static void Save(string path)
         {
             path += "_parsed";
 
             if (!Directory.Exists(path))
                 Directory.CreateDirectory(path);
-            var fileInfo = GetParse() + "\n" + GetInfo();
+            var fileInfo = GetParseText() + "\n" + GetInfoText();
             File.WriteAllText(path + "/info.txt", fileInfo);
 
             path += "/responses";
             if (!Directory.Exists(path))
                 Directory.CreateDirectory(path);
-            for (var i = 0; i < _blocks.Length; i++)
+            for (var i = 0; i < _responses.Length; i++)
             {
-                for (var j = 0; j < _blocks[i].ResponseCount; j++)
-                {
-                    var responsePath = path + $"/{i}.{j}.txt";
-                    var response = GetResponse(i, j, Newtonsoft.Json.Formatting.Indented);
-                    File.WriteAllText(responsePath, response);
-                }
+                var responsePath = path + $"/{i}.txt";
+                var response = GetResponseText(_responses[i], Newtonsoft.Json.Formatting.Indented);
+                File.WriteAllText(responsePath, response);
             }
             Console.WriteLine("Parsed info is saved.");
         }
-
-        private static string GetParse()
+        
+        
+        private static string GetParseText()
         {
             var result = new StringBuilder();
 
-            result.AppendLine($"Blocks: {_blocks.Length}");
             for (var i = 0; i < _blocks.Length; i++)
             {
                 result.AppendLine($"{i}: {_blocks[i]}");
-                for (var j = 0; j < _blocks[i].ResponseCount; j++)
+                for (var j = 0; j < _blocks[i].Responses.Length; j++)
                 {
                     result.AppendLine($"  {j}: {_blocks[i].Responses[j]}");
                 }
             }
+            result.AppendLine($"\nBlocks: {_blocks.Length}");
+            result.AppendLine($"Responses: {_responses.Length}");
             return result.ToString();
         }
-
-        private static string GetInfo()
+        
+        private static string GetInfoText()
         {
             var result = new StringBuilder();
 
@@ -139,14 +146,14 @@ namespace tz
 
             for (var i = 0; i < sorted.Length; i++)
             {
-                var avarageSize = (int)Math.Floor(sorted[i].Average(x => x.ContentLength));
+                var avarageSize = (int)Math.Floor(sorted[i].Average(x => x.DecompressedSize));
                 result.AppendLine($"{i}: {sorted[i][0].Type}");
                 result.AppendLine($"  Count: {sorted[i].Length}");
                 result.AppendLine($"  Average Size: {avarageSize}");
             }
 
-            var firstDateTime = responses.FirstOrDefault(x => x.HasDateTime)?.DateTime;
-            var lastDateTime = responses.LastOrDefault(x => x.HasDateTime)?.DateTime;
+            var firstDateTime = responses.First()?.DateTime;
+            var lastDateTime = responses.Last()?.DateTime;
             if (firstDateTime != null && lastDateTime != null)
             {
                 var sessionTime = lastDateTime - firstDateTime;
@@ -159,19 +166,15 @@ namespace tz
             return result.ToString();
         }
 
-        private static string GetResponse(int blockIndex, int responseIndex, Newtonsoft.Json.Formatting formatting)
+        private static string GetResponseText(Response response, Newtonsoft.Json.Formatting formatting)
         {
             var result = new StringBuilder();
 
-            var response = _blocks[blockIndex].Responses[responseIndex];
             result.AppendLine($"  Type: {response.Type}");
-            if (response.HasDateTime)
-            {
-                result.AppendLine($"Time: {response.DateTime}");
-            }
+            result.AppendLine($"  Time: {response.DateTime}");
             result.AppendLine($"  Compression format: {response.CompressionFormat}");
-            result.AppendLine($"  Size (compressed): {response.Length}");
-            result.AppendLine($"  Size (decompressed): {response.ContentLength}");
+            result.AppendLine($"  Size (compressed): {response.CompressedSize}");
+            result.AppendLine($"  Size (decompressed): {response.DecompressedSize}");
             if (formatting == Newtonsoft.Json.Formatting.None)
             {
                 result.AppendLine($"  Content: {response.Content?.ToString(formatting)}");
@@ -183,5 +186,6 @@ namespace tz
             
             return result.ToString();
         }
+        
     }
 }

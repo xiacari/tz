@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+message RawBlock {
+  int64 counter = 1;
+  repeated RawResponse responses = 3;
+}
+
+message RawResponse {
+  uint64 timestamp = 2;
+  string type = 3;
+  string compression = 4;
+  bytes content = 5;
+}
